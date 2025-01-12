@@ -1,0 +1,229 @@
+library(parallel)
+library(FNN)
+
+#Binomial GLM n=20
+
+#beta ∼ U(-6,6)^p 
+#f(y|beta)=  Binomial(y | logit^{-1}(X * Beta))  
+
+#number of observations
+n=20
+#number of predictors
+p=3
+
+#proposal
+priorsim<- function (x){
+  par=runif(p,-6,6)
+  return(par)
+}
+
+# data generating mechanism
+datasim<- function(param=NULL, n=n, X=X){ 
+  pi=plogis(X%*%param)
+  y=rbinom(n,size = 1,prob=pi)
+  return(y)
+}
+
+# summary statistics
+stat<- function(y,X=X){
+  return(c(y%*%X))
+}
+
+# observed data
+set.seed(901)
+param=seq(-0.25,0.25, length=p)
+X=matrix(runif(n*p,-1,1),ncol=p, nrow = n)
+
+yobs=datasim(param,n=n, X=X)
+
+# esimated model
+thetahat=glm(yobs~.-1, data=as.data.frame(X),family = binomial())
+thetahat$coefficients
+
+# observed summary statistics 
+stat(yobs,X)
+
+
+
+# yobs observed data
+# R = number of proposals
+# S = number of paired hyper rectangle bounds
+# n = sample size
+# X = model matrix
+ 
+# one Box-CD estimation
+RES=box(yobs, R = 500000,S=2,n=n, X=X)
+#number of accepted parameters
+
+sum(RES$flags==1)
+
+par(mfrow=c(3,2))
+for (i in 1:p) {
+  plot(density(RES$params[i,RES$flags==1]))
+  abline(v=param[i])
+  abline(v=thetahat$coefficients[i], col=2)
+}
+
+
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+for(k in 1:1){
+  R=500000
+  cl <- makeCluster(detectCores() - 2)
+  S=2
+  clusterExport(cl, c("priorsim", "datasim","stat", "p", "n",  "X", "S"))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  clusterExport(cl, c("params"))
+ 
+  #generate all data
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    #data
+    YSIM=lapply( 1:S,  function (x) datasim(param = param, n = n ,X=X))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ,X=X))
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, sort )#, L7,L8,L9,L10,L11,L12 )
+    #min and max
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    #observed summary statistics
+    list(T1_sorted, T2_sorted)
+  })
+  clusterExport(cl, c("results"))
+  for (isim in isim:nsim){
+  gc()
+  clusterExport(cl, c("isim"))
+  set.seed(isim+99) 
+  yobs=datasim(param,n=n, X=X)
+  Tobs <- stat(yobs, X)
+  rm(yobs)
+  clusterExport(cl, c("Tobs"))
+  results2 <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    flag <- 0
+    if (all(unlist(results[[i ]][2])> Tobs)) flag <- 0.5
+    if (all(unlist(results[[i ]][1])< Tobs)) flag <- flag + 0.5
+    # flag==1 if accepted  
+    list(param = param, flag = flag)
+  })
+  print(sum(RES$flags==1))
+  RES$params=sapply(1:R, function (r) results2[[r]]$param)
+  RES$flags=sapply(1:R, function (r) results2[[r]]$flag)
+  rm(results2)
+  #density estimation
+  dens=kepdf(t(RES$params[,RES$flags==1]))
+  dens@estimate=dens@estimate/max(dens@estimate)
+  
+  #prediction
+  dat = data.frame((dens@x),y = dens@estimate)
+  
+  colnames(dat)=sapply(1:p, function (k) paste("V", k,sep = ""))
+  colnames(dat)[p+1]="y"
+  df=as.data.frame(matrix(param,ncol=p) )
+  pred <- knn.reg(train = dat[,1:p], test = df, y  = dat$y, k = 1)$pred
+ 
+  par(mar=c(1.5,1.5,1.5,1.5))
+  par(mfrow=c(4,2))
+  
+  #0.8
+  alpha=0.2
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  count_n_interval80=count_n_interval80+contained
+  'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+  
+  #0.85
+  alpha=0.15
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  count_n_interval85=count_n_interval85+contained
+  'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+  
+  #interval 90%
+  alpha=0.1 
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  count_n_interval90=count_n_interval90+contained
+  'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+  
+  #interval 95%
+  alpha=0.05
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+  count_n_interval95=count_n_interval95+contained
+  
+  cat("\n");
+  
+  cat(isim);print(" sim");
+  cat(count_n_interval95/isim); cat(" ");
+  cat(count_n_interval90/isim); cat(" ");
+  cat(count_n_interval85/isim); cat(" ");
+  cat(count_n_interval80/isim)
+}
+}
+
+
+
+
+
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=20000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+ 
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  yobs=datasim(param,n=n, X=X[1:n,])
+  fit=glm(yobs~.-1, data=as.data.frame(X[1:n,]),family = binomial())
+  ll=logLik(fit)[1]
+  pi=plogis(X[1:n,]%*%param)
+  ll0=sum(dbinom(yobs, size=1, pi, log=T))
+  
+  pval=pchisq(2*(ll-ll0), df=3,lower.tail = F)
+  count_n_interval95=count_n_interval95+as.numeric((1-pval)>0.95)
+  count_n_interval90=count_n_interval90+as.numeric((1-pval)>0.90)
+  count_n_interval85=count_n_interval85+as.numeric((1-pval)>0.85)
+  count_n_interval80=count_n_interval80+as.numeric((1-pval)>0.80)
+  
+  
+}
+
+
+round(c(1-count_n_interval95/nsim, 
+      1-count_n_interval90/nsim,
+      1-count_n_interval85/nsim,
+      1-count_n_interval80/nsim),3)
+      
