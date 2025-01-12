@@ -1,0 +1,415 @@
+# BOX CD
+
+# draw 1
+
+par(mfrow=c(1,2))
+par(mar=(c(2,2,2,2)))
+yobs=c(2,2)
+y1=c(2.3,1.5)
+y2=c(1.2,2.4)
+
+plot(yobs[1], yobs[2], xaxt='n',yaxt='n')
+text("t",x=yobs[1]+0.04,y= yobs[2]+0.04)
+text(" obs",x=yobs[1]+0.1,y= yobs[2]+0.075, cex=0.7)
+points(y1[1], y1[2])
+points(y2[1], y2[2])
+
+abline(v=y1[1],h= y1[2])
+abline(v=y2[1], h=y2[2])
+
+text("t",x=y1[1]+0.04,y= y1[2]+0.04)
+text(" *1",x=y1[1]+0.075,y= y1[2]+0.075, cex=0.7)
+
+text("t",x=y2[1]+0.04,y= y2[2]+0.04)
+text(" *2",x=y2[1]+0.075,y= y2[2]+0.075, cex=0.7)
+
+
+
+
+yobs=c(2,2)
+y1=c(2.5,2.3)
+y2=c(1.3,2.1)
+
+plot(yobs[1], yobs[2],  xaxt='n',yaxt='n')
+text("t",x=yobs[1]+0.04,y= yobs[2]+0.04)
+text(" obs",x=yobs[1]+0.1,y= yobs[2]+0.075, cex=0.7)
+points(y1[1], y1[2])
+points(y2[1], y2[2]  )
+
+abline(v=y1[1],h= y1[2], col=2, lty=2)
+abline(v=y2[1], h=y2[2], col=2, lty=2)
+
+text("t",x=y1[1]+0.04,y= y1[2]+0.04)
+text(" *1",x=y1[1]+0.075,y= y1[2]+0.075, cex=0.7)
+
+text("t",x=y2[1]+0.04,y= y2[2]+0.04)
+text(" *2",x=y2[1]+0.075,y= y2[2]+0.075, cex=0.7)
+
+## draw 2
+par(mar=c(4,2,2,2))
+par(mfrow=c(1,3))
+plot(function(x) dnorm(x)*2.5, -3,3, xaxt="n", xlab=expression(theta))
+plot(function(x) 1-2.5*dnorm(x), -3,3, xaxt="n",   xlab=expression(theta))
+plot(function(x) 2.5*dnorm(x)*(1-2.5*dnorm(x)), -3,3, xaxt="n",   xlab=expression(theta))
+
+## draw 2
+par(mar=c(4,2,2,2))
+par(mfrow=c(1,3))
+plot(function(x) pnorm(x), -3,3, xaxt="n", xlab=expression(theta))
+plot(function(x) 1-pnorm(x), -3,3, xaxt="n",   xlab=expression(theta))
+plot(function(x) pnorm(x)*(1-pnorm(x)), -3,3, xaxt="n",   xlab=expression(theta))
+
+
+
+plot(function(x) -abs(x-0.5), 0,1, xaxt="n",   xlab=expression(theta))
+
+plot(function(x) -2*x*abs(x-0.5)*sign(x-0.5)+x, 0,1, xaxt="n", 
+     xlab=expression(theta))
+
+
+rm(list=ls())
+
+#install.packages("pdfCluster")
+library(pdfCluster)
+library(FNN)
+library(MASS) 
+ 
+#θ ∼ U(−4,4)^3, f(x|θ)= N (x|θ, Σ)  
+priorsim<- function (x){
+  runif(3,-2.5,2.5)
+}
+sigma=matrix(c(4,-1.6,0.4,
+               -1.6,2.6,1.7,
+               0.4,1.7,3.0),byrow = T, ncol=3)
+
+datasim<- function(param=NULL, n=10, sigma=sigma){ 
+      y=mvrnorm(n,mu =   param,Sigma =  sigma)
+}
+
+
+# example
+yobs=datasim(param=c(0,0.5,1),n=10,sigma=sigma)
+yobs
+apply(yobs,2,mean)
+
+#nr=nrow(yobs)
+#nc=ncol(yobs)
+#empty1=empty2=matrix(NA, nr, nc)
+#empty1=sapply(1:(nr*nc), function (x) ifelse(ysim1[x]<ysim2[x], ysim1[x],ysim2[x]))
+#empty2=sapply(1:(nr*nc), function (x) ifelse(ysim1[x]<ysim2[x], ysim2[x],ysim1[x]))
+"
+oldbox <- function(yobs, R = 1000, n = 10, sigma) {
+  # Simulate parameters for all iterations at once
+  params <- replicate(R, priorsim(x))
+  # Simulate data for all iterations at once
+  ysim1_list <- apply(params, 2, function(param) datasim(param = param, n = n, sigma = sigma))
+  ysim2_list <- apply(params, 2, function(param) datasim(param = param, n = n, sigma = sigma))
+  
+  # Compute means for all simulations
+  L1 <- t(apply(ysim1_list, 2, colMeans))
+  L2 <- t(apply(ysim2_list, 2, colMeans))
+  
+  # Sort means
+  L1_sorted <- pmin(L1, L2)
+  L2_sorted <- pmax(L1, L2)
+  
+  # Compute observed means
+  Lobs <- colMeans(yobs)
+  # Compute flags for all iterations
+  flags <- rowSums(L2_sorted > Lobs) == n * 0.5 + rowSums(L1_sorted < Lobs) == n * 0.5
+  return(list(params = params, flags = flags))
+}"
+ 
+  
+library(parallel)
+
+box <- function(yobs, R = 1000, n = 10, sigma) {
+  # Parallelize parameter simulation
+  cl <- makeCluster(detectCores() - 1)
+  sigma=matrix(c(4,-1.6,0.4,
+                 -1.6,2.6,1.7,
+                 0.4,1.7,3.0),byrow = T, ncol=3)
+  clusterExport(cl, c("priorsim", "datasim",   "sigma", "mvrnorm" ,  "yobs"))
+  
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  
+    # Parallelize data simulation and flag computation
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    ysim1 <- datasim(param = param, n = n, sigma = sigma)
+    ysim2 <- datasim(param = param, n = n, sigma = sigma)
+    
+    L1 <- colMeans(ysim1)
+    L2 <- colMeans(ysim2)
+    
+    L1_sorted <- pmin(L1, L2)
+    L2_sorted <- pmax(L1, L2)
+    
+    Lobs <- colMeans(yobs)
+    
+    flag <- 0
+    if (all(L2_sorted > Lobs)) flag <- 0.5
+    if (all(L1_sorted < Lobs)) flag <- flag + 0.5
+    
+    list(param = param, flag = flag)
+  })
+  
+  stopCluster(cl)
+  
+  # Extract parameters and flags
+  params <- do.call(cbind, lapply(results, `[[`, "param"))
+  flags <- sapply(results, `[[`, "flag")
+  
+  return(list(params = params, flags = flags))
+}
+
+
+ 
+"oldbox<- function(yobs,R=1000){
+  flags=rep(0,R)
+  params=matrix(NA, ncol=R, nrow=3)
+  for(i in 1:R){
+  flag=0
+  param=priorsim(x)
+  params[,i]=param
+  ysim1=datasim(param=param,n=10,sigma=sigma)
+  ysim2=datasim(param=param,n=10,sigma=sigma)
+  
+  L1=colmeans(ysim1)
+  L2=colmeans(ysim2)
+  Lobs=colmeans(yobs)
+   
+  L1_=ifelse(L1<L2, L1,L2)
+  L2_=ifelse(L1<L2, L2,L1)
+  
+  if(all(L2_>Lobs)) flag=0.5
+  if(all(L1_<Lobs)) flag=flag+0.5
+  flags[i]=flag
+  }
+  return(list(params=params, flags=flags))
+  }
+"
+
+
+RES=box(yobs, R = 5000,n=10)
+dim(RES$params)
+par(mfrow=c(3,1))
+for (i in 1:3) {
+  plot(density(RES$params[i,RES$flags==1]))
+  abline(v=colMeans(yobs)[i])
+}
+
+
+dens=kepdf(t(RES$params[,RES$flags==1]))
+dens@estimate=dens@estimate/max(dens@estimate)
+level=0.05
+
+lev1mlev=level*(1-level)
+label=(dens@estimate>(lev1mlev*1))
+mean(label)
+plot(dens@x[,1:2])
+points(dens@x[,2:3], col=2*(dens@estimate>=lev1mlev))
+  
+############################################################
+# simulation study
+
+set.seed(111) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=1
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  
+  yobs=datasim(param=c(0,0.5,-0.5),n=10,sigma=sigma) 
+  RES=box(yobs, 500000,n = 10, sigma = sigma)
+    
+  #density estimation
+  dens=kepdf(t(RES$params[,RES$flags==1]))
+  dens@estimate=dens@estimate/max(dens@estimate)
+  
+  #plot(sort(dens@estimate))
+  #plot(sort(sqrt(dens@estimate)))
+ 
+  
+  #prediction
+  dat = data.frame((dens@x  ),y = dens@estimate)
+  dat$y
+  fitnn=randomForest((y) ~ .,mtry=3, data = dat, importance=F,  ntree=500,
+      sampsize=length(dens@estimate), nodesize=2,maxnodes=length(dens@estimate))
+   
+  plot(predict(fitnn, newdata = dat), (dat$y))
+  pred <- (predict(fitnn, newdata = data.frame(X1 = 0, X2 = 0.5, X3 = -0.5)))
+  pred
+  
+  #0.8
+  alpha=0.2 
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  count_n_interval80=count_n_interval80+contained
+  par(mar=c(1.5,1.5,1.5,1.5))
+  par(mfrow=c(4,3))
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+ 
+  #0.85
+  alpha=0.15
+   contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  #contained=as.numeric(tail(predict(svmfit),1))-1 ##1= in the interval, 0 otherwise
+  count_n_interval85=count_n_interval85+contained
+  
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+  contained
+  
+  #interval 90%
+  alpha=0.1 
+   contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  count_n_interval90=count_n_interval90+contained
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label,   cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+ 
+  
+  #interval 95%
+  alpha=0.05
+  contained=(pred>(quantile(dens@estimate,alpha)   ))
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  plot(dens@x[,1:2], col=5+label,main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+
+    count_n_interval95=count_n_interval95+contained
+  cat("\n");
+  cat(isim);print(" sim");
+  cat(count_n_interval95/isim); cat(" ");
+  cat(count_n_interval90/isim); cat(" ");
+  cat(count_n_interval85/isim); cat(" ");
+  cat(count_n_interval80/isim)
+}
+
+
+
+
+
+
+
+
+set.seed(111) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=1
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  
+  yobs=datasim(param=c(0,0.5,-0.5),n=10,sigma=sigma) 
+  RES=box(yobs, 500000,n = 10, sigma = sigma)
+  
+  #density estimation
+  dens=kepdf(t(RES$params[,RES$flags==1]))
+  dens@estimate=dens@estimate/max(dens@estimate)
+   
+  
+  
+  #0.8
+  alpha=0.2
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  dat = data.frame((dens@x  ),y = as.numeric(label))
+  dat=rbind(dat,c(0,0.5,-0.5,0))
+  dat$y=as.factor(dat$y)
+  fitsvm=svm((y) ~ .,data=dat,kernel="polynomial", degree=2,cost=1000)
+  contained=as.numeric(tail(predict(fitsvm),1))-1
+  count_n_interval80=count_n_interval80+contained
+  
+  par(mar=c(1.5,1.5,1.5,1.5))
+  par(mfrow=c(4,3))
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+  
+  #0.85
+  alpha=0.15
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  dat = data.frame((dens@x  ),y = as.numeric(label))
+  dat=rbind(dat,c(0,0.5,-0.5,0))
+  dat$y=as.factor(dat$y)
+  fitsvm=svm((y) ~ .,data=dat,kernel="polynomial", degree=2,cost=1000)
+  contained=as.numeric(tail(predict(fitsvm),1))-1
+  count_n_interval85=count_n_interval85+contained
+  
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+  contained
+  
+  #interval 90%
+  alpha=0.1
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  dat = data.frame((dens@x  ),y = as.numeric(label))
+  dat=rbind(dat,c(0,0.5,-0.5,0))
+  dat$y=as.factor(dat$y)
+  fitsvm=svm((y) ~ .,data=dat,kernel="polynomial", degree=2,cost=1000)
+  contained=as.numeric(tail(predict(fitsvm),1))-1
+  count_n_interval90=count_n_interval90+contained
+  plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label,   cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+  
+  
+  #interval 95%
+  alpha=0.05
+  label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+  dat = data.frame((dens@x  ),y = as.numeric(label))
+  dat=rbind(dat,c(0,0.5,-0.5,0))
+  dat$y=as.factor(dat$y)
+  fitsvm=svm((y) ~ .,data=dat,kernel="polynomial", degree=2,cost=1000)
+  contained=as.numeric(tail(predict(fitsvm),1))-1
+  plot(dens@x[,1:2], col=5+label,main=contained, cex=0.1)
+  points(col=2,0,0.5, cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,0,-0.5, cex=0.5, lwd=2)
+  plot(dens@x[,2:3], col=5+label, cex=0.1)
+  points(col=2,0.5,-0.5, cex=0.5, lwd=2)
+  
+  count_n_interval95=count_n_interval95+contained
+  cat("\n");
+  cat(isim);print(" sim");
+  cat(count_n_interval95/isim); cat(" ");
+  cat(count_n_interval90/isim); cat(" ");
+  cat(count_n_interval85/isim); cat(" ");
+  cat(count_n_interval80/isim)
+}
+
