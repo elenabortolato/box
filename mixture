@@ -1,1 +1,339 @@
+# BOX ABC
+rm(list=ls())
+#install.packages("pdfCluster")
+library(pdfCluster)
+library(parallel) 
+library(FNN)
+library(MASS)
+ 
+
+#θ ∼ U(0,5), f(x|θ)= 0.5*N (x|θ, 1)  +0.5*N (x|-θ, 1) 
+
+# prior is the proposal for the parameter
+priorsim<- function (x){
+  runif(1,0,5)
+}
+ 
+# data generating emchanism
+datasim<- function(param=NULL, n=10){ 
+  y=rnorm(n,  param,sd=  1)
+  n0=rbinom(n,1,prob=0.5)
+  y[n0==0]=-y[n0==0]
+  y
+}
+
+#summary statistic of dimension d=n
+stat<- function (x) sort(x)
+ 
+# example
+yobs=datasim(param=1.5,n=10)
+yobs 
+S=2 # two pseudo samples used to generate the data
+p=1 # dimension of the parameter vector (scalar)
+
+
+box <- function(yobs, R = 1000, S=2, n = 10) {
+  # Parallelize parameter simulation
+  if(is.null(S)) S=2
+  cl <- makeCluster(detectCores() - 1)
+  clusterExport(cl, c("priorsim", "datasim","stat", "p", "n", "S", "yobs"))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  
+  # Parallelize data simulation and flag computation
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    #data
+    YSIM=lapply( 1:S,  function (x) datasim(param = param, n = n ))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ))
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, sort ) 
+    #min and max
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    #observed summary statistics
+    Tobs <- stat(yobs )
+    flag <- 0
+    if (all(T2_sorted > Tobs)) flag <- 0.5
+    if (all(T1_sorted < Tobs)) flag <- flag + 0.5
+    # flag==1 if accepted  
+    list(param = param, flag = flag)
+  })
+  
+  stopCluster(cl)
+  
+  # Extract parameters and flags
+  params <- do.call(cbind, lapply(results, `[[`, "param"))
+  flags <- sapply(results, `[[`, "flag")
+  return(list(params = params, flags = flags))
+}
+
+############################################
+# figures : change n sample size, see % accepted with S=2 constant
+############################################
+
+par(mfrow=c(2,2))
+set.seed(123456789)
+nn=c(5,10,15,20)
+for (i in 1:4) {
+  n=nn[i]
+  yobs=datasim(0.8,n=n)
+  priorsim<- function (x){
+    runif(1,max(0,0.8-5/sqrt(n)),0.8+5/sqrt(n))
+  }
+  RES=box(yobs, R = 50000*sqrt(n),n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=n)
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+}
+
+
+
+###########################################
+#Changing both S and n  and study the % accepted
+###########################################
+par(mfrow=c(2,2))
+priorsim<- function (x){
+  runif(1,0,8)
+}
+ 
+SS=c(2,4,6,8,10)
+ACC10=ACC15=ACC20=ACC25=NA
+ 
+#n=10 
+set.seed(99)
+n=10
+yobs=datasim(0.8,n=n)
+for (i in 1:5) {
+  S=SS[i]
+  set.seed(88)
+  RES=box(yobs = yobs, R = 100000,S = S,n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=n)
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+  ACC10[i]=sum(RES$flags==1)
+}
+
+#n=15
+set.seed(99)
+n=15
+yobs=datasim(0.8,n=n)
+for (i in 1:5) {
+  S=SS[i]
+  set.seed(88)
+  RES=box(yobs = yobs, R = 100000,S = S,n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=n)
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+  ACC15[i]=sum(RES$flags==1)
+}
+
+#n=20
+set.seed(99)
+n=20
+yobs=datasim(0.8,n=n)
+for (i in 1:5) {
+  S=SS[i]
+  set.seed(88)
+  RES=box(yobs = yobs, R = 100000,S = S,n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=n)
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+  ACC20[i]=sum(RES$flags==1)
+}
+
+#n=25
+set.seed(99)
+n=25
+yobs=datasim(0.8,n=n)
+for (i in 1:5) {
+  S=SS[i]
+  set.seed(88)
+  RES=box(yobs = yobs, R = 100000,S = S,n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=n)
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+  ACC25[i]=sum(RES$flags==1)
+}
+
+ 
+par(mfrow=c(1,2))
+par(mar=c(rep(4,4)))
+ 
+plot(SS,(ACC10), type="l", ylim=c(0,(100000/3.3)), xlab="S", ylab="acc")
+points(SS,(ACC15), type="l", lty=2)
+points(SS,(ACC20), type="l", lty=3)
+points(SS,(ACC25), type="l", lty=4)
+legend("topleft", lty=c(1:4), legend=paste("n=",c(10,15,20,25)), cex=0.8)
+
+ 
+plot(SS,(ACC10), type="n", ylim=c(1,(380)), xlab="S",
+     ylab="acc/acc with S=2")
+points(SS,c(1,((ACC10[2:5]/ACC10[1 ]))), type="l", lty=1, ylab="accepted")
+points(SS,c(1,(ACC15[2:5]/ACC15[1 ])), type="l", lty=2)
+points(SS,c(1,(ACC20[2:5]/ACC20[1 ])), type="l", lty=3)
+points(SS,c(1,(ACC25[2:5]/ACC25[1 ])), type="l", lty=4)
+ 
+ 
+legend("topleft", lty=c(1:4), legend=paste("n=",c(10,15,20,25)), cex=0.8)
+
+
+
+###############################################################################
+#fix sample size, show a series of experiments form the same dataset
+#changing the simulation seed 
+#n=25
+set.seed(99)
+n=25
+par(mfrow=c(2,2))
+priorsim<-function (x){
+  runif(1,0,2)
+}
+for (i in 2:5) {
+  S=SS[i]
+  set.seed(123)
+  yobs=datasim(0.8,n=n)
+  RES=box(yobs = yobs, R = 200000,S = S,n=n)
+  plot(density(RES$params[1,RES$flags==1]),main=paste("S=", S), xlab="", ylab="", ylim=c(0,2))
+  
+  for (rep in 2:5){
+    set.seed(rep)
+  
+  RES=box(yobs = yobs, R =200000,S = S,n=n)
+  points(density(RES$params[1,RES$flags==1]),main=S,
+         type="l",xlab="", ylab="")
+  abline(v=0.8)
+  print(sum(RES$flags==1))
+  ACC25[i]=sum(RES$flags==1)}
+}
+###################
+
+priorsim
+
+# SIMULATION STUDY
+priorsim<- function (x){
+  runif(1,0.1, 5)
+}
+param= 1
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+for(k in 1:1){
+  R=100000
+  cl <- makeCluster(detectCores() - 2)
+  S=6
+  p=1
+  n=10
+  clusterExport(cl, c("priorsim", "datasim","stat", "p", "n","R", "mvrnorm",  "S"))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  clusterExport(cl, c("params"))
+  
+  #generate all data
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    #data
+    YSIM=lapply( 1:S,  function (x) datasim(param = param, n = n  ))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ))
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, sort )#, L7,L8,L9,L10,L11,L12 )
+    #min and max
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    #observed summary statistics
+    list(T1_sorted, T2_sorted)
+  })
+  clusterExport(cl, c("results"))
+  for (isim in isim:nsim){
+    gc()
+    clusterExport(cl, c("isim"))
+    set.seed(isim+899) 
+    yobs=datasim(0.8,n=n )
+    Tobs <- stat(yobs )
+    rm(yobs)
+    clusterExport(cl, c("Tobs"))
+    results2 <- parLapply(cl, seq_len(R), function(i) {
+      param <- (params[,i])
+      flag <- 0
+      if (all(unlist(results[[i ]][2])> Tobs)) flag <- 0.5
+      if (all(unlist(results[[i ]][1])< Tobs)) flag <- flag + 0.5
+      # flag==1 if accepted  
+      list(param = param, flag = flag)
+    })
+    RES=list()
+    RES$params=sapply(1:R, function (r) results2[[r]]$param)
+    RES$flags=sapply(1:R, function (r) results2[[r]]$flag)
+    print(sum(RES$flags==1))
+    rm(results2)
+    #density estimation
+    dens=kepdf((RES$params[RES$flags==1]) )
+    dens@estimate=dens@estimate/max(dens@estimate)
+    
+    #prediction
+    dat = data.frame((dens@x),y = dens@estimate)
+    p=1
+    colnames(dat)=sapply(1:p, function (k) paste("V", k,sep = ""))
+    colnames(dat)[p+1]="y"
+    df=as.data.frame(matrix(param,ncol=p) )
+    pred <- knn.reg(train = dat[,1:p], test = df, y  = dat$y, k = 1)$pred
+    
+    par(mar=c(1.5,1.5,1.5,1.5))
+    par(mfrow=c(4,2))
+    
+    #0.8
+    alpha=0.2
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>=(quantile(dens@estimate,alpha) ))
+    count_n_interval80=count_n_interval80+contained
+    plot(density(dens@x))
+    max(dens@x)
+    'plot(dens@x[,1], col=5+label, main=contained, cex=0.1)
+    points(col=2,param,  cex=0.5, lwd=2)'
+    'plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+    points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+    
+    #0.85
+    alpha=0.15
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>=(quantile(dens@estimate,alpha) ))
+    count_n_interval85=count_n_interval85+contained
+   
+    
+    #interval 90%
+    alpha=0.1 
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval90=count_n_interval90+contained
+     
+    
+    #interval 95%
+    alpha=0.05
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval95=count_n_interval95+contained
+    
+    cat("\n");
+    
+    cat(isim);print(" sim");
+    cat(count_n_interval95/isim); cat(" ");
+    cat(count_n_interval90/isim); cat(" ");
+    cat(count_n_interval85/isim); cat(" ");
+    cat(count_n_interval80/isim)
+  }
+}
+
 
