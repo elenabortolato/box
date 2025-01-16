@@ -1,0 +1,254 @@
+#Ricker Model with 2  unknown parameters (logr and sigma^2) 
+#  d=19 summary statistics (all the data without the first observation)
+# the second parameter (phi) is fixed
+####################
+rm(list=ls())
+require(mnormt)
+require(mvtnorm)
+library(pdfCluster)
+library(parallel)
+
+priorsim<- function (x){
+  c(runif(1,0.01,4),runif(1,4,4),runif(1,0.001,10))
+}
+
+datasim = function(N0,par,timestep = 20){
+  theta = c(exp(par[1]),par[2],par[3])
+  r      = theta[1]
+  phi    = theta[2]
+  sigma2 = theta[3]
+  Nt = rep(N0,timestep)
+  et = rep(0,timestep)
+  Y = rep(NA,timestep)
+  for(timer in 2:timestep){
+    et[timer] = rnorm(n=1,0,sd = sqrt(sigma2))
+    Nt[timer] =r*Nt[timer-1]*exp(-Nt[timer-1]+et[timer])
+    Y[timer]  = rpois(n=1,phi*Nt[timer])
+  }
+  return(list(y=Y,x=1:timestep,Nt=Nt,et=et,theta=theta))
+}
+
+
+N0 = 2 
+timestep = 20
+set.seed(123)
+yobs=datasim(N0=2,c(2,4,2) , timestep = 20)
+p=3
+
+yobs$y 
+
+library(moments)
+
+plot(yobs$y)
+output=yobs
+#### Consider the synthetic likelihood, and some summaries, plot wrt r
+stat<- function(output){
+  outputsum = c(output$y[-1])#medi, var,  ske, kurt, ratio,diff, y5,y10,y20,y25,y30)#,
+ # names(outputsum) = c("morethan10","medi", "q3")
+  return(outputsum)
+} 
+
+stat(yobs)
+
+yobs=datasim(N0 = 2,c(2,4,2),timestep = 20)
+yobs$y
+TOBS=stat(yobs) 
+TOBS
+
+S=4
+
+for (  j in 1:10000){
+  param=priorsim()
+  yobs=datasim(2,c(1,1,0.2),timestep = 20)
+  TOBS=stat(yobs) 
+  yy=datasim(N0 = 2,par = param, timestep = 20)
+  tt=stat(yy)
+  cat(sum(tt>=TOBS,na.rm = T))
+}
+S=10
+box <- function(yobs, R = 1000, S=8) {
+  # Parallelize parameter simulation
+  p=2
+  N0=2
+  cl <- makeCluster(detectCores() - 1)
+  clusterExport(cl, c("priorsim", "datasim","stat",  "p", "N0", "S", "kurtosis", "skewness", "yobs"))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  dim(params)
+  print(dim(params))
+  
+  
+  # Parallelize data simulation and flag computation
+  results <- parLapply(cl, seq_len(R), function(i) {
+    
+    param <- c(params[c(1:3),i])
+     #data
+    YSIM=lapply( 1:S,  function (x) datasim(N0 = N0, par = param, timestep = 20))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ))
+    
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, function (x) sort(x,na.last = T)  ) 
+    #min and max
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    #observed summary statistics
+    Tobs <- stat(yobs)
+    flag <- 0
+    if (all(T2_sorted >= Tobs)) flag <- 0.5
+    if (all(T1_sorted <= Tobs)) flag <- flag + 0.5
+    # flag==1 if accepted  
+    list(param = param, flag = flag)
+  })
+  
+  stopCluster(cl)
+  
+  # Extract parameters and flags
+  params <- do.call(cbind, lapply(results, `[[`, "param"))
+  flags <- sapply(results, `[[`, "flag")
+  return(list(params = params, flags = flags))
+}
+
+
+RES=box(yobs, R=150000,S=10)
+print(sum(RES$flags)) 
+plot(density((RES$params[1,RES$flags==1])))
+plot(density((RES$params[2,RES$flags==1])))
+ 
+#############################################################################
+# SIMULATION STUDY
+
+par(mfrow=c(1,1))
+priorsim<-function (x){
+  c(runif(1,-5.,12),runif(1,4,4),runif(1,0.0001,12))
+}
+library(FNN)
+# SIMULATION STUDY
+ 
+param= c(2,4,2)
+set.seed(123456789) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+for(k in 1:1){
+  R=100000
+  cl <- makeCluster(detectCores() - 2)
+  S=10
+  p=3
+  
+  clusterExport(cl, c("priorsim", "datasim","stat", "p", "kurtosis", "skewness", "N0","R", "S"))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  
+  clusterExport(cl, c("params"))
+  dim(params)
+  #generate all data
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- c(params[1:p,i])
+    #data
+    YSIM=lapply( 1:S,  function (x) datasim(N0 = N0,par = param,timestep = 20 ))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ))
+     
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, function(x) sort(x,na.last = T) ) 
+    #min and max
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    T1_sorted[is.na(T1_sorted)]=999
+    T2_sorted[is.na(T2_sorted)]=999
+    #observed summary statistics
+    list(T1_sorted, T2_sorted)
+  })
+  clusterExport(cl, c("results"))
+  for (isim in isim:nsim){
+    gc()
+    clusterExport(cl, c("isim"))
+    set.seed(isim+77) 
+    yobs=datasim(N0 = N0,par = param,timestep = 20 )
+    Tobs <- stat(yobs )
+    Tobs[is.na(Tobs)]=999
+    rm(yobs)
+    clusterExport(cl, c("Tobs"))
+    results2 <- parLapply(cl, seq_len(R), function(i) {
+      param <- c(params[1:p,i])
+      flag <- 0
+      if (all(unlist(results[[i ]][2])>= Tobs)) flag <- 0.5
+      if (all(unlist(results[[i ]][1])<= Tobs)) flag <- flag + 0.5
+      # flag==1 if accepted  
+      list(param = param, flag = flag)
+    })
+    RES=list()
+    RES$params=sapply(1:R, function (r) results2[[r]]$param)
+    RES$flags=sapply(1:R, function (r) results2[[r]]$flag)
+    print(sum(RES$flags==1))
+    rm(results2)
+    #density estimation
+    dim(RES$params)
+    dens=kepdf(t(RES$params[c(1,3),RES$flags==1]) )
+    dens@estimate=dens@estimate/max(dens@estimate)
+    dens@x
+    
+    #prediction
+    
+    dat = data.frame(dens@x,y = (dens@estimate))
+    dim(dat)
+    p=3
+    colnames(dat)=sapply(c(1,2), function (k) paste("V", k,sep = ""))
+    colnames(dat)[p]="y"
+    df=as.data.frame(matrix(param[c(1,3)],ncol=2) )# 1 is the true parameter
+    pred <- knn.reg(train = dat[,1:2], test = df, y  = dat$y, k = 1)$pred
+    
+    par(mar=c(1.5,1.5,1.5,1.5)+1)
+    par(mfrow=c(1,1))
+    
+    #0.8
+    alpha=0.2
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>=(quantile(dens@estimate,alpha) ))
+    count_n_interval80=count_n_interval80+contained
+    
+    plot(dens@x[,c(1,2)], col=5+label, cex=0.1)
+    points(col=2,param[1], param[3], cex=0.5, lwd=2)
+    
+    #0.85
+    alpha=0.15
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>=(quantile(dens@estimate,alpha) ))
+    count_n_interval85=count_n_interval85+contained
+    
+    
+    #interval 90%
+    alpha=0.1 
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval90=count_n_interval90+contained
+    
+    
+    #interval 95%
+    alpha=0.05
+    contained=(pred>=(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval95=count_n_interval95+contained
+    
+    cat("\n");
+    
+    cat(isim);print(" sim");
+    cat(count_n_interval95/isim); cat(" ");
+    cat(count_n_interval90/isim); cat(" ");
+    cat(count_n_interval85/isim); cat(" ");
+    cat(count_n_interval80/isim)
+  }
+}
+
