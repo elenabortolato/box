@@ -413,3 +413,54 @@ for (isim in isim:nsim){
   cat(count_n_interval80/isim)
 }
 
+
+
+## LIKELIHOOD RATIO TEST
+
+llik<- function (par, yobs){
+  sum(dmvnorm(yobs,mean  =par,sigma =    sigma,log = T))
+}
+
+
+
+
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+n=10
+sigma
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  
+  param=c(0,0.5,-0.5) 
+  yobs=datasim(param,n = 10,sigma = sigma) 
+   
+  thetahat=nlminb(c(2,2,2), function (x) -llik(x, yobs))$par
+  ll0=llik(param, yobs)
+  ll=llik(thetahat,  yobs)
+  pval=pchisq(2*(ll-ll0), df=3,lower.tail = F)
+  count_n_interval95=count_n_interval95+as.numeric((1-pval)>0.95)
+  count_n_interval90=count_n_interval90+as.numeric((1-pval)>0.90)
+  count_n_interval85=count_n_interval85+as.numeric((1-pval)>0.85)
+  count_n_interval80=count_n_interval80+as.numeric((1-pval)>0.80)
+   
+  
+  
+}
+
+
+round(c(1-count_n_interval95/2000, 
+        1-count_n_interval90/2000,
+        1-count_n_interval85/2000,
+        1-count_n_interval80/2000),3)
+
+
+
