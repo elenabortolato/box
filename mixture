@@ -337,3 +337,51 @@ for(k in 1:1){
 }
 
 
+
+## LLR
+
+yobs=datasim(1,n = 10)
+llik<- function (theta, yobs){
+  sum(log(0.5*dnorm(yobs, theta,sd=  1)+0.5*dnorm(yobs, -theta,sd=  1)))
+}
+thetahat=nlminb(6, function (x) -llik(x))$par
+
+
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+n=50
+param=1
+
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  
+  
+  yobs=datasim(param,n=n)
+  thetahat=nlminb(6, function (x) -llik(x, yobs),lower = 0)$par
+  ll0=llik(param, yobs)
+  ll=llik(thetahat,yobs = yobs)
+  pval=pchisq(2*(ll-ll0), df=1,lower.tail = F)
+  count_n_interval95=count_n_interval95+as.numeric((1-pval)>0.95)
+  count_n_interval90=count_n_interval90+as.numeric((1-pval)>0.90)
+  count_n_interval85=count_n_interval85+as.numeric((1-pval)>0.85)
+  count_n_interval80=count_n_interval80+as.numeric((1-pval)>0.80)
+  
+  
+}
+
+
+
+
+round(c(1-count_n_interval95/2000, 
+        1-count_n_interval90/2000,
+        1-count_n_interval85/2000,
+        1-count_n_interval80/2000),3)
+
