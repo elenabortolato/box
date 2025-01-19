@@ -1,0 +1,362 @@
+# BOX CD
+
+# draw 1
+
+par(mfrow=c(1,2))
+par(mar=(c(2,2,2,2)))
+yobs=c(2,2)
+y1=c(2.3,1.5)
+y2=c(1.2,2.4)
+
+plot(yobs[1], yobs[2], xaxt='n',yaxt='n')
+text("t",x=yobs[1]+0.04,y= yobs[2]+0.04)
+text(" obs",x=yobs[1]+0.1,y= yobs[2]+0.075, cex=0.7)
+points(y1[1], y1[2])
+points(y2[1], y2[2])
+
+abline(v=y1[1],h= y1[2])
+abline(v=y2[1], h=y2[2])
+
+text("t",x=y1[1]+0.04,y= y1[2]+0.04)
+text(" *1",x=y1[1]+0.075,y= y1[2]+0.075, cex=0.7)
+
+text("t",x=y2[1]+0.04,y= y2[2]+0.04)
+text(" *2",x=y2[1]+0.075,y= y2[2]+0.075, cex=0.7)
+
+
+
+
+yobs=c(2,2)
+y1=c(2.5,2.3)
+y2=c(1.3,2.1)
+
+plot(yobs[1], yobs[2],  xaxt='n',yaxt='n')
+text("t",x=yobs[1]+0.04,y= yobs[2]+0.04)
+text(" obs",x=yobs[1]+0.1,y= yobs[2]+0.075, cex=0.7)
+points(y1[1], y1[2])
+points(y2[1], y2[2]  )
+
+abline(v=y1[1],h= y1[2], col=2, lty=2)
+abline(v=y2[1], h=y2[2], col=2, lty=2)
+
+text("t",x=y1[1]+0.04,y= y1[2]+0.04)
+text(" *1",x=y1[1]+0.075,y= y1[2]+0.075, cex=0.7)
+
+text("t",x=y2[1]+0.04,y= y2[2]+0.04)
+text(" *2",x=y2[1]+0.075,y= y2[2]+0.075, cex=0.7)
+
+## draw 2
+par(mar=c(4,2,2,2))
+par(mfrow=c(1,3))
+plot(function(x) dnorm(x)*2.5, -3,3, xaxt="n", xlab=expression(theta))
+plot(function(x) 1-2.5*dnorm(x), -3,3, xaxt="n",   xlab=expression(theta))
+plot(function(x) 2.5*dnorm(x)*(1-2.5*dnorm(x)), -3,3, xaxt="n",   xlab=expression(theta))
+
+## draw 2
+par(mar=c(4,2,2,2))
+par(mfrow=c(1,3))
+plot(function(x) pnorm(x), -3,3, xaxt="n", xlab=expression(theta))
+plot(function(x) 1-pnorm(x), -3,3, xaxt="n",   xlab=expression(theta))
+plot(function(x) pnorm(x)*(1-pnorm(x)), -3,3, xaxt="n",   xlab=expression(theta))
+
+
+
+plot(function(x) -abs(x-0.5), 0,1, xaxt="n",   xlab=expression(theta))
+
+plot(function(x) -2*x*abs(x-0.5)*sign(x-0.5)+x, 0,1, xaxt="n", 
+     xlab=expression(theta))
+
+
+rm(list=ls())
+
+#install.packages("pdfCluster")
+library(pdfCluster)
+library(FNN)
+library(MASS) 
+library(mvtnorm)
+# MULTIVARIATE STUDENT T
+priorsim<- function (x){
+  runif(3,-2.5,2.5)
+}
+sigma=matrix(c(2,-1.,0.4,
+               -1.,1.6,0.7,
+               0.4,0.7,1.0),byrow = T, ncol=3)
+
+datasim<- function(param=NULL, n=10, sigma=sigma){ 
+    y=mvtnorm::rmvt(n,delta =    param,sigma =  sigma, df=5)
+}
+
+
+# example
+yobs=datasim(param=c(0,0.5,1),n=10,sigma=sigma)
+
+yobs
+apply(yobs,2,mean)
+
+#nr=nrow(yobs)
+#nc=ncol(yobs)
+#empty1=empty2=matrix(NA, nr, nc)
+#empty1=sapply(1:(nr*nc), function (x) ifelse(ysim1[x]<ysim2[x], ysim1[x],ysim2[x]))
+#empty2=sapply(1:(nr*nc), function (x) ifelse(ysim1[x]<ysim2[x], ysim2[x],ysim1[x]))
+"
+oldbox <- function(yobs, R = 1000, n = 10, sigma) {
+  # Simulate parameters for all iterations at once
+  params <- replicate(R, priorsim(x))
+  # Simulate data for all iterations at once
+  ysim1_list <- apply(params, 2, function(param) datasim(param = param, n = n, sigma = sigma))
+  ysim2_list <- apply(params, 2, function(param) datasim(param = param, n = n, sigma = sigma))
+  
+  # Compute means for all simulations
+  L1 <- t(apply(ysim1_list, 2, colMeans))
+  L2 <- t(apply(ysim2_list, 2, colMeans))
+  
+  # Sort means
+  L1_sorted <- pmin(L1, L2)
+  L2_sorted <- pmax(L1, L2)
+  
+  # Compute observed means
+  Lobs <- colMeans(yobs)
+  # Compute flags for all iterations
+  flags <- rowSums(L2_sorted > Lobs) == n * 0.5 + rowSums(L1_sorted < Lobs) == n * 0.5
+  return(list(params = params, flags = flags))
+}"
+
+
+library(parallel)
+
+box <- function(yobs, R = 1000, n = 10, sigma) {
+  # Parallelize parameter simulation
+  cl <- makeCluster(detectCores() - 1)
+  sigma=matrix(c(4,-1.6,0.4,
+                 -1.6,2.6,1.7,
+                 0.4,1.7,3.0),byrow = T, ncol=3)
+  clusterExport(cl, c("priorsim", "datasim",   "sigma", "mvrnorm" ,  "yobs"))
+  
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  
+  # Parallelize data simulation and flag computation
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    ysim1 <- datasim(param = param, n = n, sigma = sigma)
+    ysim2 <- datasim(param = param, n = n, sigma = sigma)
+    
+    L1 <- colMeans(ysim1)
+    L2 <- colMeans(ysim2)
+    
+    L1_sorted <- pmin(L1, L2)
+    L2_sorted <- pmax(L1, L2)
+    
+    Lobs <- colMeans(yobs)
+    
+    flag <- 0
+    if (all(L2_sorted > Lobs)) flag <- 0.5
+    if (all(L1_sorted < Lobs)) flag <- flag + 0.5
+    
+    list(param = param, flag = flag)
+  })
+  
+  stopCluster(cl)
+  
+  # Extract parameters and flags
+  params <- do.call(cbind, lapply(results, `[[`, "param"))
+  flags <- sapply(results, `[[`, "flag")
+  
+  return(list(params = params, flags = flags))
+}
+
+ 
+
+RES=box(yobs, R = 50000,n=10)
+dim(RES$params)
+par(mfrow=c(3,1))
+for (i in 1:3) {
+  plot(density(RES$params[i,RES$flags==1]))
+  abline(v=colMeans(yobs)[i])
+}
+
+par(mfrow=c(1,1))
+dens=kepdf(t(RES$params[,RES$flags==1]))
+plot(dens@x[,1:2],xlim=c(-4,4), ylim=c(-4,4))
+points(dens@x[,1:2], col=2*(dens@estimate>=quantile(dens@estimate,0.1)))
+
+############################################################
+# simulation study
+
+set.seed(1111) 
+
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=2000 
+isim=1
+param=c(0,0.5,-0.5)
+priorsim<-function (x){
+  runif(3,-4,4)
+}
+datasim<-function(param=NULL, n=10, sigma=sigma){ 
+  y=mvtnorm::rmvt(n,delta =    param,sigma =  sigma, df=10)
+}
+stat<- function(x) apply(x,2,median)
+stat(datasim(c(0,0,0), sigma=sigma,n=10))
+for(k in 1:1){
+  R=250000
+  cl <- makeCluster(detectCores() - 2)
+  S=4
+  p=3
+  n=10
+  clusterExport(cl, c("priorsim","datasim","stat","p","n","rmvt","sigma","S"
+                      ))
+  
+  #generate all parameters
+  params <- parLapply(cl, seq_len(R), function(i) priorsim(x))
+  params <- do.call(cbind, params)
+  clusterExport(cl, c("params"))
+  
+  #generate all data
+  results <- parLapply(cl, seq_len(R), function(i) {
+    param <- (params[,i])
+    #data
+    YSIM=lapply( 1:S,  function (x) datasim(param = param, n = n ,sigma = sigma ))
+    #summary statistics
+    TSIM=  sapply( 1:S,  function (x) stat(YSIM[[x]] ))
+    #sort component-wise all summary statistics
+    T_sorted <- apply(TSIM, 1, sort ) 
+    T1_sorted=T_sorted[1,]
+    T2_sorted=T_sorted[S,]
+    #observed summary statistics
+    list(T1_sorted, T2_sorted)
+  })
+  clusterExport(cl, c("results"))
+  for (isim in isim:nsim){
+    gc()
+    clusterExport(cl, c("isim"))
+    set.seed(isim+111) 
+    yobs=datasim(param,n=n, sigma = sigma )
+    Tobs <- stat(yobs )
+    rm(yobs)
+    clusterExport(cl, c("Tobs"))
+    results2 <- parLapply(cl, seq_len(R), function(i) {
+      param <- (params[,i])
+      flag <- 0
+      if (all(unlist(results[[i ]][2])> Tobs)) flag <- 0.5
+      if (all(unlist(results[[i ]][1])< Tobs)) flag <- flag + 0.5
+      # flag==1 if accepted  
+      list(param = param, flag = flag)
+    })
+    
+    RES=list()
+    RES$params=sapply(1:R, function (r) results2[[r]]$param)
+    RES$flags=sapply(1:R, function (r) results2[[r]]$flag)
+    rm(results2)
+    print(sum(RES$flags==1))
+    #density estimation
+    dens=kepdf(t(RES$params[,RES$flags==1]))
+    dens@estimate=dens@estimate/max(dens@estimate)
+    
+    #prediction
+    dat = data.frame((dens@x),y = dens@estimate)
+    
+    colnames(dat)=sapply(1:p, function (k) paste("V", k,sep = ""))
+    colnames(dat)[p+1]="y"
+    df=as.data.frame(matrix(param,ncol=p) )
+    pred <- knn.reg(train = dat[,1:p], test = df, y  = dat$y, k = 1)$pred
+    
+    par(mar=c(1.5,1.5,1.5,1.5))
+    par(mfrow=c(4,2))
+    
+    #0.8
+    alpha=0.2
+    contained=(pred>(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval80=count_n_interval80+contained
+    plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+    points(col=2,param[1], param[2], cex=0.5, lwd=2)
+    plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+    points(col=2,param[1], param[3], cex=0.5, lwd=2)
+    
+    #0.85
+    alpha=0.15
+    contained=(pred>(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval85=count_n_interval85+contained
+    plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+    points(col=2,param[1], param[2], cex=0.5, lwd=2)
+    plot(dens@x[,c(2,3)], col=5+label, cex=0.1)
+    points(col=2,param[2], param[3], cex=0.5, lwd=2)
+    
+    #interval 90%
+    alpha=0.1 
+    contained=(pred>(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    count_n_interval90=count_n_interval90+contained
+    'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+    
+    #interval 95%
+    alpha=0.05
+    contained=(pred>(quantile(dens@estimate,alpha)   ))
+    label=(dens@estimate>(quantile(dens@estimate,alpha) ))
+    'plot(dens@x[,1:2], col=5+label, main=contained, cex=0.1)
+  points(col=2,param[1], param[2], cex=0.5, lwd=2)
+  plot(dens@x[,c(1,3)], col=5+label, cex=0.1)
+  points(col=2,param[1], param[3], cex=0.5, lwd=2)'
+    count_n_interval95=count_n_interval95+contained
+    
+    cat("\n");
+    
+    cat(isim);print(" sim");
+    cat(count_n_interval95/isim); cat(" ");
+    cat(count_n_interval90/isim); cat(" ");
+    cat(count_n_interval85/isim); cat(" ");
+    cat(count_n_interval80/isim)
+  }
+}
+
+## LIKELIHOOD RATIO TEST
+llik<- function (par, yobs){
+    sum(mvtnorm::dmvt(yobs,delta  =par,sigma =     sigma,df = 10,log = T))
+}
+mvtnorm::dmvt()
+
+set.seed(333) 
+count_n_interval95=0
+count_n_interval90=0
+count_n_interval85=0
+count_n_interval80=0
+nsim=20000
+results_all=list(nsim)
+isim=0
+isim=isim+1
+isim
+
+n=10
+sigma
+for (isim in isim:nsim){
+  set.seed(isim+99) 
+  
+  param=c(0,0.5,-0.5) 
+  yobs=datasim(param,n = 10,sigma = sigma) 
+  
+  thetahat=nlminb(c(2,2,2), function (x) -llik(x, yobs))$par
+  ll0=llik(param, yobs)
+  ll=llik(thetahat,  yobs)
+  pval=pchisq(2*(ll-ll0), df=3,lower.tail = F)
+  count_n_interval95=count_n_interval95+as.numeric((1-pval)>0.95)
+  count_n_interval90=count_n_interval90+as.numeric((1-pval)>0.90)
+  count_n_interval85=count_n_interval85+as.numeric((1-pval)>0.85)
+  count_n_interval80=count_n_interval80+as.numeric((1-pval)>0.80)
+  
+  
+  
+}
+
+
+round(c(1-count_n_interval95/20000, 
+        1-count_n_interval90/20000,
+        1-count_n_interval85/20000,
+        1-count_n_interval80/20000),3)
+
